@@ -1,5 +1,5 @@
 -- Kisha demo: one of each element.
-local URL = "YOUR_RAW_URL_TO_Kisha.lua"
+local URL = "https://raw.githubusercontent.com/mialmos/Kisha-ui/refs/heads/main/Kisha.lua"
 local Kisha = loadstring(game:HttpGet(URL))()
 
 local Window = Kisha:CreateWindow({

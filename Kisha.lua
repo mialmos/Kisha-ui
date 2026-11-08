@@ -1,7 +1,14 @@
 --[[
-	Kisha UI Library  v1.0.0
-	A generic, self-contained Roblox Luau UI framework.
+	Kisha UI Library  v2.0.0  (Liquid Glass / Pastel Pink)
+	Self-contained Roblox Luau UI framework. API-compatible with v1.
 	No telemetry, no remote auth, no third-party links.
+
+	New in v2:
+	  * Frosted "liquid glass" look: translucent surfaces, specular sheen, gradient rim light
+	  * Pastel pink theme
+	  * Cat-face logo (built from Gui objects) + "Kisha UI" in the header
+	  * Optional screen blur behind the window (opts.Blur = false to disable)
+	  * opts.Logo = "rbxassetid://..." lets you swap the logo for your own image
 
 	Sections: Services / Theme / Helpers / Config / Notify / Elements / Window / Library API
 ]]
@@ -21,7 +28,7 @@ if not okCore then
 	CoreGui = nil
 end
 
--- Shared environment (used to tear down a previous load of Kisha on re-execute)
+-- Shared environment (used to tear down a previous load on re-execute)
 local function getEnv()
 	local ok, env = pcall(function()
 		return getgenv()
@@ -43,7 +50,7 @@ end
 -- Library table
 ------------------------------------------------------------------------
 local Library = {
-	Version = "1.0.0",
+	Version = "2.0.0",
 	Flags = {},
 	Windows = {},
 	ConfigFolder = "Kisha/configs",
@@ -54,29 +61,30 @@ local Library = {
 }
 
 ------------------------------------------------------------------------
--- Theme
+-- Theme (pastel pink liquid glass)
 ------------------------------------------------------------------------
 local Theme = {
-	Background = Color3.fromRGB(13, 15, 24),
-	Sidebar = Color3.fromRGB(10, 12, 19),
-	Card = Color3.fromRGB(18, 21, 33),
-	Element = Color3.fromRGB(25, 29, 44),
-	ElementHover = Color3.fromRGB(31, 36, 54),
-	Stroke = Color3.fromRGB(40, 46, 68),
-	Off = Color3.fromRGB(45, 51, 74),
-	Text = Color3.fromRGB(238, 241, 250),
-	SubText = Color3.fromRGB(139, 148, 173),
-	Accent = Color3.fromRGB(62, 112, 255), -- cobalt
+	Background = Color3.fromRGB(255, 222, 238), -- glass tint
+	Glass = Color3.fromRGB(255, 255, 255),
+	Track = Color3.fromRGB(243, 198, 221),
+	Text = Color3.fromRGB(92, 42, 74), -- deep plum for contrast on glass
+	SubText = Color3.fromRGB(150, 96, 127),
+	Accent = Color3.fromRGB(255, 133, 184), -- pastel pink
 	White = Color3.fromRGB(255, 255, 255),
-	Font = Enum.Font.Gotham,
+	Font = Enum.Font.GothamMedium,
 	FontBold = Enum.Font.GothamBold,
-	WindowRadius = 14,
-	ElementRadius = 8,
+	WindowRadius = 20,
+	CardRadius = 15,
+	ElementRadius = 12,
+	WindowAlpha = 0.2,
+	CardAlpha = 0.74,
+	ElementAlpha = 0.5,
+	ElementHoverAlpha = 0.28,
 }
 
 Library.Accent = Theme.Accent
 
-local RowH = UserInputService.TouchEnabled and 40 or 36
+local RowH = UserInputService.TouchEnabled and 42 or 38
 
 ------------------------------------------------------------------------
 -- Helpers
@@ -104,13 +112,56 @@ local function Corner(parent, radius)
 	return New("UICorner", { CornerRadius = UDim.new(0, radius or Theme.ElementRadius), Parent = parent })
 end
 
-local function Stroke(parent, color, transparency)
+-- Plain stroke (used for focus rings)
+local function Stroke(parent, color, transparency, thickness)
 	return New("UIStroke", {
-		Color = color or Theme.Stroke,
-		Thickness = 1,
+		Color = color or Theme.White,
+		Thickness = thickness or 1,
 		Transparency = transparency or 0,
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 		Parent = parent,
+	})
+end
+
+-- Glass rim light: bright on the top-left edge, fading toward the bottom-right
+local function Rim(parent, strength, thickness)
+	local s = New("UIStroke", {
+		Color = Theme.White,
+		Thickness = thickness or 1.2,
+		Transparency = strength or 0,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Parent = parent,
+	})
+	New("UIGradient", {
+		Rotation = 45,
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(0.45, 0.6),
+			NumberSequenceKeypoint.new(1, 0.2),
+		}),
+		Parent = s,
+	})
+	return s
+end
+
+-- Vertical sheen so surfaces read as curved glass
+local function Gloss(inst, top, bottom)
+	return New("UIGradient", {
+		Rotation = 90,
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, top or 0),
+			NumberSequenceKeypoint.new(1, bottom or 0.3),
+		}),
+		Parent = inst,
+	})
+end
+
+-- Soft color shading for solid pieces (toggle pill, slider fill)
+local function Shade(inst)
+	return New("UIGradient", {
+		Rotation = 90,
+		Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(226, 226, 226)),
+		Parent = inst,
 	})
 end
 
@@ -175,7 +226,7 @@ local function roundTo(n, inc)
 		return n
 	end
 	local r = math.floor(n / inc + 0.5) * inc
-	local decimals = (tostring(inc):match("%.(%d+)")) 
+	local decimals = tostring(inc):match("%.(%d+)")
 	decimals = decimals and #decimals or 0
 	return tonumber(string.format("%." .. decimals .. "f", r)) or r
 end
@@ -254,7 +305,7 @@ end
 method(Library, "SaveConfig", function(self, name)
 	name = name or "default"
 	local data = {}
-	for flag, entry in pairs(self._registry) do
+	for flag in pairs(self._registry) do
 		local v = self.Flags[flag]
 		if typeof(v) == "EnumItem" then
 			v = v.Name
@@ -330,7 +381,7 @@ method(Library, "Notify", function(self, opts)
 			Name = "KishaToasts",
 			AnchorPoint = Vector2.new(1, 0),
 			Position = UDim2.new(1, -16, 0, 16),
-			Size = UDim2.new(0, 280, 1, -32),
+			Size = UDim2.new(0, 290, 1, -32),
 			BackgroundTransparency = 1,
 			Parent = gui,
 		})
@@ -355,17 +406,19 @@ method(Library, "Notify", function(self, opts)
 		Size = UDim2.new(1, 0, 0, 0),
 		Position = UDim2.new(1, 60, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundColor3 = Theme.Card,
+		BackgroundColor3 = Theme.Background,
+		BackgroundTransparency = 0.12,
 		BorderSizePixel = 0,
 		Parent = wrapper,
 	})
-	Corner(toast, 12)
-	Stroke(toast, Theme.Stroke)
-	Pad(toast, 12)
+	Corner(toast, 16)
+	Rim(toast, 0)
+	Gloss(toast, 0, 0.25)
+	Pad(toast, 12, 14, 12, 14)
 	New("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = toast })
 
 	Label({
-		Text = tostring(opts.Title or "Kisha"),
+		Text = tostring(opts.Title or "Kisha UI"),
 		Font = Theme.FontBold,
 		TextSize = 14,
 		Size = UDim2.new(1, 0, 0, 18),
@@ -387,16 +440,17 @@ method(Library, "Notify", function(self, opts)
 	end
 
 	local track = New("Frame", {
-		Size = UDim2.new(1, 0, 0, 3),
-		BackgroundColor3 = Theme.Off,
+		Size = UDim2.new(1, 0, 0, 4),
+		BackgroundColor3 = Theme.Track,
 		LayoutOrder = 3,
 		Parent = toast,
 	})
 	Corner(track, 2)
 	local fill = New("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = accent, Parent = track })
 	Corner(fill, 2)
+	Shade(fill)
 
-	tween(toast, { Position = UDim2.new(0, 0, 0, 0) }, 0.3, Enum.EasingStyle.Quint)
+	tween(toast, { Position = UDim2.new(0, 0, 0, 0) }, 0.35, Enum.EasingStyle.Quint)
 	tween(fill, { Size = UDim2.new(0, 0, 1, 0) }, duration, Enum.EasingStyle.Linear)
 
 	task.delay(duration, function()
@@ -422,18 +476,20 @@ local function buildSection(ctx, page, container, sectionObj)
 	local function Row(height)
 		local row = New("Frame", {
 			Size = UDim2.new(1, 0, 0, height or RowH),
-			BackgroundColor3 = Theme.Element,
+			BackgroundColor3 = Theme.Glass,
+			BackgroundTransparency = Theme.ElementAlpha,
 			BorderSizePixel = 0,
 			LayoutOrder = nextOrder(),
 			Parent = container,
 		})
 		Corner(row)
-		Stroke(row, Theme.Stroke, 0.4)
+		Rim(row, 0.15)
+		Gloss(row, 0, 0.3)
 		row.MouseEnter:Connect(function()
-			tween(row, { BackgroundColor3 = Theme.ElementHover }, 0.12)
+			tween(row, { BackgroundTransparency = Theme.ElementHoverAlpha }, 0.14)
 		end)
 		row.MouseLeave:Connect(function()
-			tween(row, { BackgroundColor3 = Theme.Element }, 0.12)
+			tween(row, { BackgroundTransparency = Theme.ElementAlpha }, 0.14)
 		end)
 		return row
 	end
@@ -468,42 +524,44 @@ local function buildSection(ctx, page, container, sectionObj)
 		local row = Row()
 		Label({
 			Text = o.Name or "Toggle",
-			Position = UDim2.fromOffset(12, 0),
-			Size = UDim2.new(1, -70, 1, 0),
+			Position = UDim2.fromOffset(14, 0),
+			Size = UDim2.new(1, -74, 1, 0),
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = row,
 		})
 		local sw = New("Frame", {
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, -12, 0.5, 0),
-			Size = UDim2.fromOffset(40, 20),
-			BackgroundColor3 = Theme.Off,
+			Size = UDim2.fromOffset(42, 22),
+			BackgroundColor3 = Theme.Track,
 			Parent = row,
 		})
-		Corner(sw, 10)
+		Corner(sw, 11)
+		Shade(sw)
 		local knob = New("Frame", {
 			AnchorPoint = Vector2.new(0, 0.5),
 			Position = UDim2.new(0, 3, 0.5, 0),
-			Size = UDim2.fromOffset(14, 14),
+			Size = UDim2.fromOffset(16, 16),
 			BackgroundColor3 = Theme.White,
 			Parent = sw,
 		})
-		Corner(knob, 7)
+		Corner(knob, 8)
+		Stroke(knob, Color3.fromRGB(240, 190, 215), 0.3, 1)
 		local hit = Hit(row)
 
 		local el = { Value = o.Default and true or false, Flag = o.Flag, Type = "Toggle" }
 
 		local function render(time)
-			tween(sw, { BackgroundColor3 = el.Value and ctx.accent or Theme.Off }, time)
+			tween(sw, { BackgroundColor3 = el.Value and ctx.accent or Theme.Track }, time)
 			tween(knob, {
-				Position = el.Value and UDim2.new(1, -17, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
-			}, time)
+				Position = el.Value and UDim2.new(1, -19, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
+			}, time, Enum.EasingStyle.Quint)
 		end
 
 		method(el, "Set", function(_, v, silent)
 			el.Value = v and true or false
 			commit(o.Flag, el.Value)
-			render(0.15)
+			render(0.2)
 			if not silent then
 				fire(o.Callback, el.Value)
 			end
@@ -529,45 +587,47 @@ local function buildSection(ctx, page, container, sectionObj)
 		o = o or {}
 		local min, max = o.Min or 0, o.Max or 100
 		local inc = o.Increment or 1
-		local row = Row(54)
+		local row = Row(56)
 
 		Label({
 			Text = o.Name or "Slider",
-			Position = UDim2.fromOffset(12, 6),
-			Size = UDim2.new(1, -90, 0, 18),
+			Position = UDim2.fromOffset(14, 7),
+			Size = UDim2.new(1, -92, 0, 18),
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = row,
 		})
 		local valueLabel = Label({
 			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, -12, 0, 6),
+			Position = UDim2.new(1, -14, 0, 7),
 			Size = UDim2.fromOffset(70, 18),
 			TextXAlignment = Enum.TextXAlignment.Right,
 			TextColor3 = Theme.SubText,
 			Parent = row,
 		})
 		local track = New("Frame", {
-			Position = UDim2.new(0, 12, 0, 36),
-			Size = UDim2.new(1, -24, 0, 6),
-			BackgroundColor3 = Theme.Off,
+			Position = UDim2.new(0, 14, 0, 38),
+			Size = UDim2.new(1, -28, 0, 8),
+			BackgroundColor3 = Theme.Track,
 			Parent = row,
 		})
-		Corner(track, 3)
+		Corner(track, 4)
 		local fill = New("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = ctx.accent, Parent = track })
-		Corner(fill, 3)
+		Corner(fill, 4)
+		Shade(fill)
 		local knob = New("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(1, 0.5),
-			Size = UDim2.fromOffset(12, 12),
+			Size = UDim2.fromOffset(16, 16),
 			BackgroundColor3 = Theme.White,
 			Parent = fill,
 		})
-		Corner(knob, 6)
+		Corner(knob, 8)
+		local knobStroke = Stroke(knob, ctx.accent, 0, 2)
 
 		-- Large invisible hit area (touch friendly)
 		local hit = New("TextButton", {
 			Position = UDim2.new(0, 0, 0, 26),
-			Size = UDim2.new(1, 0, 0, 28),
+			Size = UDim2.new(1, 0, 0, 30),
 			BackgroundTransparency = 1,
 			Text = "",
 			AutoButtonColor = false,
@@ -649,6 +709,7 @@ local function buildSection(ctx, page, container, sectionObj)
 
 		ctx.bind(function(c)
 			fill.BackgroundColor3 = c
+			knobStroke.Color = c
 		end)
 		el:Set(o.Default ~= nil and o.Default or min, true)
 		register(ctx, o.Flag, "slider", function(v)
@@ -678,15 +739,15 @@ local function buildSection(ctx, page, container, sectionObj)
 		})
 		Label({
 			Text = o.Name or "Dropdown",
-			Position = UDim2.fromOffset(12, 0),
-			Size = UDim2.new(0.5, -12, 1, 0),
+			Position = UDim2.fromOffset(14, 0),
+			Size = UDim2.new(0.5, -14, 1, 0),
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = header,
 		})
 		local valueLabel = Label({
 			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, -30, 0, 0),
-			Size = UDim2.new(0.5, -36, 1, 0),
+			Position = UDim2.new(1, -32, 0, 0),
+			Size = UDim2.new(0.5, -38, 1, 0),
 			TextXAlignment = Enum.TextXAlignment.Right,
 			TextColor3 = Theme.SubText,
 			TextTruncate = Enum.TextTruncate.AtEnd,
@@ -698,7 +759,7 @@ local function buildSection(ctx, page, container, sectionObj)
 			Font = Theme.FontBold,
 			TextColor3 = Theme.SubText,
 			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, -8, 0, 0),
+			Position = UDim2.new(1, -10, 0, 0),
 			Size = UDim2.fromOffset(18, RowH),
 			TextXAlignment = Enum.TextXAlignment.Center,
 			Rotation = 90,
@@ -711,6 +772,7 @@ local function buildSection(ctx, page, container, sectionObj)
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
 			ScrollBarThickness = 2,
+			ScrollBarImageColor3 = ctx.accent,
 			CanvasSize = UDim2.new(),
 			AutomaticCanvasSize = Enum.AutomaticSize.Y,
 			Parent = row,
@@ -723,13 +785,15 @@ local function buildSection(ctx, page, container, sectionObj)
 		local function recolor()
 			for opt, b in pairs(optionButtons) do
 				b.TextColor3 = (opt == el.Value) and ctx.accent or Theme.SubText
+				b.Font = (opt == el.Value) and Theme.FontBold or Theme.Font
 			end
+			list.ScrollBarImageColor3 = ctx.accent
 		end
 
 		local function resize()
 			local listH = math.min(#options * 30, 150)
 			list.Size = UDim2.new(1, -12, 0, listH)
-			tween(row, { Size = UDim2.new(1, 0, 0, open and (RowH + listH + 8) or RowH) }, 0.2)
+			tween(row, { Size = UDim2.new(1, 0, 0, open and (RowH + listH + 8) or RowH) }, 0.22, Enum.EasingStyle.Quint)
 			tween(arrow, { Rotation = open and -90 or 90 }, 0.2)
 		end
 
@@ -758,7 +822,7 @@ local function buildSection(ctx, page, container, sectionObj)
 			for i, opt in ipairs(options) do
 				local b = New("TextButton", {
 					Size = UDim2.new(1, 0, 0, 28),
-					BackgroundColor3 = Theme.ElementHover,
+					BackgroundColor3 = Theme.White,
 					BackgroundTransparency = 1,
 					Text = opt,
 					Font = Theme.Font,
@@ -768,9 +832,9 @@ local function buildSection(ctx, page, container, sectionObj)
 					LayoutOrder = i,
 					Parent = list,
 				})
-				Corner(b, 6)
+				Corner(b, 8)
 				b.MouseEnter:Connect(function()
-					tween(b, { BackgroundTransparency = 0.3 }, 0.1)
+					tween(b, { BackgroundTransparency = 0.4 }, 0.1)
 				end)
 				b.MouseLeave:Connect(function()
 					tween(b, { BackgroundTransparency = 1 }, 0.1)
@@ -835,7 +899,8 @@ local function buildSection(ctx, page, container, sectionObj)
 		})
 		hit.MouseButton1Click:Connect(function()
 			row.BackgroundColor3 = ctx.accent
-			tween(row, { BackgroundColor3 = Theme.ElementHover }, 0.3)
+			row.BackgroundTransparency = 0.1
+			tween(row, { BackgroundColor3 = Theme.Glass, BackgroundTransparency = Theme.ElementAlpha }, 0.4)
 			fire(o.Callback)
 		end)
 		local el = { Type = "Button" }
@@ -851,8 +916,8 @@ local function buildSection(ctx, page, container, sectionObj)
 		local row = Row()
 		Label({
 			Text = o.Name or "Keybind",
-			Position = UDim2.fromOffset(12, 0),
-			Size = UDim2.new(1, -120, 1, 0),
+			Position = UDim2.fromOffset(14, 0),
+			Size = UDim2.new(1, -124, 1, 0),
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = row,
 		})
@@ -860,7 +925,8 @@ local function buildSection(ctx, page, container, sectionObj)
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, -8, 0.5, 0),
 			Size = UDim2.fromOffset(96, RowH - 12),
-			BackgroundColor3 = Theme.Off,
+			BackgroundColor3 = Theme.Glass,
+			BackgroundTransparency = 0.25,
 			Text = "",
 			Font = Theme.FontBold,
 			TextSize = 12,
@@ -868,7 +934,8 @@ local function buildSection(ctx, page, container, sectionObj)
 			AutoButtonColor = false,
 			Parent = row,
 		})
-		Corner(btn, 6)
+		Corner(btn, 8)
+		Rim(btn, 0.2)
 
 		local unknown = Enum.KeyCode.Unknown
 		local el = { Value = o.Default or unknown, Flag = o.Flag, Type = "Keybind" }
@@ -949,8 +1016,8 @@ local function buildSection(ctx, page, container, sectionObj)
 		local row = Row()
 		Label({
 			Text = o.Name or "Textbox",
-			Position = UDim2.fromOffset(12, 0),
-			Size = UDim2.new(0.5, -16, 1, 0),
+			Position = UDim2.fromOffset(14, 0),
+			Size = UDim2.new(0.5, -18, 1, 0),
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = row,
 		})
@@ -958,7 +1025,8 @@ local function buildSection(ctx, page, container, sectionObj)
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.new(1, -8, 0.5, 0),
 			Size = UDim2.new(0.5, -8, 0, RowH - 12),
-			BackgroundColor3 = Theme.Off,
+			BackgroundColor3 = Theme.Glass,
+			BackgroundTransparency = 0.25,
 			Text = o.Default or "",
 			PlaceholderText = o.Placeholder or "",
 			PlaceholderColor3 = Theme.SubText,
@@ -969,9 +1037,9 @@ local function buildSection(ctx, page, container, sectionObj)
 			ClipsDescendants = true,
 			Parent = row,
 		})
-		Corner(box, 6)
+		Corner(box, 8)
 		Pad(box, 0, 8, 0, 8)
-		local stroke = Stroke(box, Theme.Stroke, 1)
+		local focusRing = Stroke(box, ctx.accent, 1, 1.5)
 
 		local el = { Value = o.Default or "", Flag = o.Flag, Type = "Textbox" }
 
@@ -989,11 +1057,11 @@ local function buildSection(ctx, page, container, sectionObj)
 		end)
 
 		box.Focused:Connect(function()
-			stroke.Color = ctx.accent
-			tween(stroke, { Transparency = 0 }, 0.15)
+			focusRing.Color = ctx.accent
+			tween(focusRing, { Transparency = 0 }, 0.15)
 		end)
 		box.FocusLost:Connect(function()
-			tween(stroke, { Transparency = 1 }, 0.15)
+			tween(focusRing, { Transparency = 1 }, 0.15)
 			el:Set(box.Text)
 		end)
 
@@ -1009,7 +1077,7 @@ local function buildSection(ctx, page, container, sectionObj)
 		local row = Row(0)
 		row.AutomaticSize = Enum.AutomaticSize.Y
 		row.Size = UDim2.new(1, 0, 0, 0)
-		Pad(row, 10, 12, 10, 12)
+		Pad(row, 10, 14, 10, 14)
 		New("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = row })
 
 		local title = Label({
@@ -1052,6 +1120,96 @@ local function buildSection(ctx, page, container, sectionObj)
 end
 
 ------------------------------------------------------------------------
+-- Logo: an original cat-face mark built from Gui objects
+-- (pass opts.Logo = "rbxassetid://..." to use your own image instead)
+------------------------------------------------------------------------
+local function buildLogo(parent, ctx, image)
+	local holder = New("Frame", {
+		Name = "Logo",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 16, 0.5, 0),
+		Size = UDim2.fromOffset(34, 34),
+		BackgroundTransparency = 1,
+		Parent = parent,
+	})
+
+	if type(image) == "string" and image ~= "" then
+		New("ImageLabel", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Image = image,
+			ScaleType = Enum.ScaleType.Fit,
+			Parent = holder,
+		})
+		return holder
+	end
+
+	local pieces = {}
+
+	local function ear(x)
+		local e = New("Frame", {
+			Position = UDim2.fromOffset(x, 3),
+			Size = UDim2.fromOffset(11, 11),
+			Rotation = 45,
+			BackgroundColor3 = ctx.accent,
+			Parent = holder,
+		})
+		Corner(e, 3)
+		pieces[#pieces + 1] = e
+		local inner = New("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(5, 5),
+			BackgroundColor3 = Theme.White,
+			BackgroundTransparency = 0.35,
+			Parent = e,
+		})
+		Corner(inner, 2)
+	end
+	ear(4)
+	ear(19)
+
+	local head = New("Frame", {
+		Position = UDim2.fromOffset(2, 9),
+		Size = UDim2.fromOffset(30, 23),
+		BackgroundColor3 = ctx.accent,
+		Parent = holder,
+	})
+	Corner(head, 12)
+	Shade(head)
+	Rim(head, 0.1, 1.2)
+	pieces[#pieces + 1] = head
+
+	local function eye(x)
+		local e = New("Frame", {
+			Position = UDim2.fromOffset(x, 8),
+			Size = UDim2.fromOffset(4, 6),
+			BackgroundColor3 = Theme.Text,
+			Parent = head,
+		})
+		Corner(e, 3)
+	end
+	eye(8)
+	eye(18)
+
+	local nose = New("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 15),
+		Size = UDim2.fromOffset(6, 4),
+		BackgroundColor3 = Theme.White,
+		Parent = head,
+	})
+	Corner(nose, 2)
+
+	ctx.bind(function(c)
+		for _, p in ipairs(pieces) do
+			p.BackgroundColor3 = c
+		end
+	end)
+	return holder
+end
+
+------------------------------------------------------------------------
 -- Window
 ------------------------------------------------------------------------
 local function createWindow(_, opts)
@@ -1077,7 +1235,8 @@ local function createWindow(_, opts)
 	end
 
 	Library.Accent = ctx.accent
-	local size = opts.Size or UDim2.fromOffset(560, 420)
+	local size = opts.Size or UDim2.fromOffset(580, 430)
+	local titleText = (opts.Title == nil or opts.Title == "Kisha") and "Kisha UI" or opts.Title
 
 	-- Root + Main ------------------------------------------------------
 	local Root = New("Frame", {
@@ -1096,13 +1255,52 @@ local function createWindow(_, opts)
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = Theme.Background,
+		BackgroundTransparency = Theme.WindowAlpha,
 		BorderSizePixel = 0,
 		GroupTransparency = 1,
 		Parent = Root,
 	})
 	local pop = New("UIScale", { Scale = 0.94, Parent = Main })
 	Corner(Main, Theme.WindowRadius)
-	Stroke(Main, Theme.Stroke)
+	Rim(Main, 0, 1.5)
+
+	-- Liquid sheen: a diagonal white highlight that fades across the pane
+	local sheen = New("Frame", {
+		Name = "Sheen",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Theme.White,
+		BorderSizePixel = 0,
+		Parent = Main,
+	})
+	New("UIGradient", {
+		Rotation = 35,
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.5),
+			NumberSequenceKeypoint.new(0.4, 0.82),
+			NumberSequenceKeypoint.new(1, 0.95),
+		}),
+		Parent = sheen,
+	})
+	-- Soft color bloom in the lower right
+	local bloom = New("Frame", {
+		Name = "Bloom",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = ctx.accent,
+		BorderSizePixel = 0,
+		Parent = Main,
+	})
+	New("UIGradient", {
+		Rotation = 35,
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.6, 0.93),
+			NumberSequenceKeypoint.new(1, 0.72),
+		}),
+		Parent = bloom,
+	})
+	ctx.bind(function(c)
+		bloom.BackgroundColor3 = c
+	end)
 
 	-- Fit to small screens (mobile) ------------------------------------
 	local function fit()
@@ -1123,29 +1321,19 @@ local function createWindow(_, opts)
 	-- Header -----------------------------------------------------------
 	local header = New("Frame", {
 		Name = "Header",
-		Size = UDim2.new(1, 0, 0, 50),
+		Size = UDim2.new(1, 0, 0, 56),
 		BackgroundTransparency = 1,
 		Parent = Main,
 	})
-	local dot = New("Frame", {
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 16, 0.5, 0),
-		Size = UDim2.fromOffset(10, 10),
-		BackgroundColor3 = ctx.accent,
-		Parent = header,
-	})
-	Corner(dot, 5)
-	ctx.bind(function(c)
-		dot.BackgroundColor3 = c
-	end)
+	buildLogo(header, ctx, opts.Logo)
 
 	local hasSub = opts.Subtitle and opts.Subtitle ~= ""
 	Label({
-		Text = opts.Title or "Kisha",
+		Text = titleText,
 		Font = Theme.FontBold,
-		TextSize = 16,
-		Position = UDim2.fromOffset(36, hasSub and 8 or 0),
-		Size = UDim2.new(1, -90, 0, hasSub and 20 or 50),
+		TextSize = 17,
+		Position = UDim2.fromOffset(60, hasSub and 9 or 0),
+		Size = UDim2.new(1, -112, 0, hasSub and 21 or 56),
 		Parent = header,
 	})
 	if hasSub then
@@ -1153,18 +1341,18 @@ local function createWindow(_, opts)
 			Text = opts.Subtitle,
 			TextSize = 11,
 			TextColor3 = Theme.SubText,
-			Position = UDim2.fromOffset(36, 27),
-			Size = UDim2.new(1, -90, 0, 14),
+			Position = UDim2.fromOffset(60, 30),
+			Size = UDim2.new(1, -112, 0, 14),
 			Parent = header,
 		})
 	end
 
 	local closeBtn = New("TextButton", {
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -10, 0.5, 0),
+		Position = UDim2.new(1, -14, 0.5, 0),
 		Size = UDim2.fromOffset(32, 32),
-		BackgroundColor3 = Theme.Element,
-		BackgroundTransparency = 1,
+		BackgroundColor3 = Theme.Glass,
+		BackgroundTransparency = 0.5,
 		Text = "×",
 		Font = Theme.FontBold,
 		TextSize = 20,
@@ -1172,19 +1360,37 @@ local function createWindow(_, opts)
 		AutoButtonColor = false,
 		Parent = header,
 	})
-	Corner(closeBtn, 8)
+	Corner(closeBtn, 16)
+	Rim(closeBtn, 0.2)
 	closeBtn.MouseEnter:Connect(function()
-		tween(closeBtn, { BackgroundTransparency = 0, TextColor3 = Theme.Text }, 0.12)
+		tween(closeBtn, { BackgroundTransparency = 0.15, TextColor3 = Theme.Text }, 0.12)
 	end)
 	closeBtn.MouseLeave:Connect(function()
-		tween(closeBtn, { BackgroundTransparency = 1, TextColor3 = Theme.SubText }, 0.12)
+		tween(closeBtn, { BackgroundTransparency = 0.5, TextColor3 = Theme.SubText }, 0.12)
 	end)
 
-	New("Frame", {
-		Position = UDim2.fromOffset(0, 50),
+	-- Specular top edge + header divider
+	local edge = New("Frame", {
+		Position = UDim2.fromOffset(24, 1),
+		Size = UDim2.new(1, -48, 0, 1),
+		BackgroundColor3 = Theme.White,
+		BorderSizePixel = 0,
+		Parent = Main,
+	})
+	New("UIGradient", {
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.5, 0),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+		Parent = edge,
+	})
+	local divider = New("Frame", {
+		Position = UDim2.fromOffset(0, 56),
 		Size = UDim2.new(1, 0, 0, 1),
-		BackgroundColor3 = Theme.Stroke,
-		BackgroundTransparency = 0.3,
+		BackgroundColor3 = Theme.White,
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
 		Parent = Main,
 	})
 
@@ -1228,16 +1434,26 @@ local function createWindow(_, opts)
 
 	-- Body: sidebar + content -----------------------------------------
 	local body = New("Frame", {
-		Position = UDim2.fromOffset(0, 51),
-		Size = UDim2.new(1, 0, 1, -51),
+		Position = UDim2.fromOffset(0, 57),
+		Size = UDim2.new(1, 0, 1, -57),
 		BackgroundTransparency = 1,
 		Parent = Main,
 	})
 	local sidebar = New("Frame", {
-		Size = UDim2.new(0, 132, 1, 0),
-		BackgroundColor3 = Theme.Sidebar,
+		Size = UDim2.new(0, 138, 1, 0),
+		BackgroundColor3 = Theme.Glass,
+		BackgroundTransparency = 0.7,
 		BorderSizePixel = 0,
 		Parent = body,
+	})
+	New("Frame", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		Size = UDim2.new(0, 1, 1, 0),
+		BackgroundColor3 = Theme.White,
+		BackgroundTransparency = 0.5,
+		BorderSizePixel = 0,
+		Parent = sidebar,
 	})
 	local tabList = New("ScrollingFrame", {
 		Size = UDim2.fromScale(1, 1),
@@ -1248,12 +1464,12 @@ local function createWindow(_, opts)
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		Parent = sidebar,
 	})
-	Pad(tabList, 10, 8, 10, 8)
-	New("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = tabList })
+	Pad(tabList, 12, 10, 12, 10)
+	New("UIListLayout", { Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder, Parent = tabList })
 
 	local content = New("Frame", {
-		Position = UDim2.fromOffset(132, 0),
-		Size = UDim2.new(1, -132, 1, 0),
+		Position = UDim2.fromOffset(138, 0),
+		Size = UDim2.new(1, -138, 1, 0),
 		BackgroundTransparency = 1,
 		ClipsDescendants = true,
 		Parent = body,
@@ -1282,10 +1498,11 @@ local function createWindow(_, opts)
 			LayoutOrder = #window.Tabs + 1,
 			Parent = tabList,
 		})
-		Corner(btn, 8)
+		Corner(btn, 12)
+		local btnRim = Rim(btn, 1)
 		local bar = New("Frame", {
 			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, 0, 0.5, 0),
+			Position = UDim2.new(0, 5, 0.5, 0),
 			Size = UDim2.fromOffset(3, 16),
 			BackgroundColor3 = ctx.accent,
 			BackgroundTransparency = 1,
@@ -1293,30 +1510,29 @@ local function createWindow(_, opts)
 		})
 		Corner(bar, 2)
 
-		local textX = 12
+		local textX = 16
 		local icon = tabOpts.Icon
 		if type(icon) == "string" and icon ~= "" then
 			if icon:match("^rbxasset") then
 				New("ImageLabel", {
 					AnchorPoint = Vector2.new(0, 0.5),
-					Position = UDim2.new(0, 12, 0.5, 0),
+					Position = UDim2.new(0, 16, 0.5, 0),
 					Size = UDim2.fromOffset(16, 16),
 					BackgroundTransparency = 1,
 					Image = icon,
 					ImageColor3 = Theme.SubText,
 					Parent = btn,
 				})
-				textX = 36
 			else
 				Label({
 					Text = icon,
-					Position = UDim2.fromOffset(12, 0),
+					Position = UDim2.fromOffset(14, 0),
 					Size = UDim2.fromOffset(18, 38),
 					TextXAlignment = Enum.TextXAlignment.Center,
 					Parent = btn,
 				})
-				textX = 36
 			end
+			textX = 38
 		end
 		local lbl = Label({
 			Text = name,
@@ -1341,21 +1557,22 @@ local function createWindow(_, opts)
 			Visible = false,
 			Parent = content,
 		})
-		Pad(page, 12, 14, 12, 12)
-		New("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder, Parent = page })
+		Pad(page, 14, 16, 14, 14)
+		New("UIListLayout", { Padding = UDim.new(0, 12), SortOrder = Enum.SortOrder.LayoutOrder, Parent = page })
 
 		local active = false
 		function tab._setActive(v)
 			active = v
 			page.Visible = v
-			tween(btn, { BackgroundTransparency = v and 0.88 or 1 }, 0.15)
-			tween(bar, { BackgroundTransparency = v and 0 or 1 }, 0.15)
-			tween(lbl, { TextColor3 = v and Theme.Text or Theme.SubText }, 0.15)
+			tween(btn, { BackgroundTransparency = v and 0.45 or 1 }, 0.18)
+			tween(btnRim, { Transparency = v and 0.1 or 1 }, 0.18)
+			tween(bar, { BackgroundTransparency = v and 0 or 1 }, 0.18)
+			tween(lbl, { TextColor3 = v and Theme.Text or Theme.SubText }, 0.18)
 		end
 
 		btn.MouseEnter:Connect(function()
 			if not active then
-				tween(btn, { BackgroundTransparency = 0.94 }, 0.1)
+				tween(btn, { BackgroundTransparency = 0.8 }, 0.1)
 			end
 		end)
 		btn.MouseLeave:Connect(function()
@@ -1381,15 +1598,17 @@ local function createWindow(_, opts)
 				Name = section.Name,
 				Size = UDim2.new(1, 0, 0, 0),
 				AutomaticSize = Enum.AutomaticSize.Y,
-				BackgroundColor3 = Theme.Card,
+				BackgroundColor3 = Theme.Glass,
+				BackgroundTransparency = Theme.CardAlpha,
 				BorderSizePixel = 0,
 				LayoutOrder = #tab.Sections + 1,
 				Parent = page,
 			})
-			Corner(frame, 10)
-			Stroke(frame, Theme.Stroke, 0.3)
-			Pad(frame, 10)
-			New("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = frame })
+			Corner(frame, Theme.CardRadius)
+			Rim(frame, 0.25)
+			Gloss(frame, 0, 0.25)
+			Pad(frame, 10, 10, 10, 10)
+			New("UIListLayout", { Padding = UDim.new(0, 7), SortOrder = Enum.SortOrder.LayoutOrder, Parent = frame })
 
 			local title = Label({
 				Text = string.upper(section.Name),
@@ -1400,6 +1619,7 @@ local function createWindow(_, opts)
 				LayoutOrder = 0,
 				Parent = frame,
 			})
+			Pad(title, 0, 0, 0, 4)
 			ctx.bind(function(c)
 				title.TextColor3 = c
 			end)
@@ -1418,6 +1638,19 @@ local function createWindow(_, opts)
 		return tab
 	end)
 
+	-- Optional screen blur (frosted-glass effect behind the window) ----
+	local blur
+	local blurSize = tonumber(opts.BlurSize) or 14
+	if opts.Blur ~= false then
+		pcall(function()
+			blur = New("BlurEffect", {
+				Name = "KishaBlur",
+				Size = 0,
+				Parent = game:GetService("Lighting"),
+			})
+		end)
+	end
+
 	-- Visibility -------------------------------------------------------
 	local token = 0
 	method(window, "SetVisible", function(_, v)
@@ -1428,14 +1661,17 @@ local function createWindow(_, opts)
 		window.Visible = v
 		token += 1
 		local mine = token
+		if blur then
+			tween(blur, { Size = v and blurSize or 0 }, 0.3)
+		end
 		if v then
 			Root.Visible = true
-			tween(Main, { GroupTransparency = 0 }, 0.2)
-			tween(pop, { Scale = 1 }, 0.28, Enum.EasingStyle.Back)
+			tween(Main, { GroupTransparency = 0 }, 0.25)
+			tween(pop, { Scale = 1 }, 0.35, Enum.EasingStyle.Back)
 		else
-			tween(Main, { GroupTransparency = 1 }, 0.15)
-			tween(pop, { Scale = 0.94 }, 0.15)
-			task.delay(0.17, function()
+			tween(Main, { GroupTransparency = 1 }, 0.18)
+			tween(pop, { Scale = 0.94 }, 0.18)
+			task.delay(0.2, function()
 				if token == mine and not window.Destroyed then
 					Root.Visible = false
 				end
@@ -1486,16 +1722,19 @@ local function createWindow(_, opts)
 			Name = "KishaLauncher",
 			AnchorPoint = Vector2.new(0, 0.5),
 			Position = UDim2.new(0, 10, 0.5, 0),
-			Size = UDim2.fromOffset(46, 46),
+			Size = UDim2.fromOffset(48, 48),
 			BackgroundColor3 = ctx.accent,
-			Text = string.upper(string.sub(opts.Title or "K", 1, 1)),
+			BackgroundTransparency = 0.1,
+			Text = "K",
 			Font = Theme.FontBold,
-			TextSize = 18,
+			TextSize = 19,
 			TextColor3 = Theme.White,
 			AutoButtonColor = false,
 			Parent = gui,
 		})
-		Corner(launcher, 14)
+		Corner(launcher, 24)
+		Rim(launcher, 0)
+		Gloss(launcher, 0, 0.3)
 		launcher.MouseButton1Click:Connect(function()
 			window:SetVisible(not window.Visible)
 		end)
@@ -1524,6 +1763,9 @@ local function createWindow(_, opts)
 		Root:Destroy()
 		if launcher then
 			launcher:Destroy()
+		end
+		if blur then
+			blur:Destroy()
 		end
 		local i = table.find(Library.Windows, window)
 		if i then
